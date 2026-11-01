@@ -1,0 +1,32 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.sepehr071/gamefa-mcp",
+  "title": "Gamefa",
+  "description": "Read-only Gamefa (gamefa.com) Persian game and film site: news, scored reviews, profiles, releases.",
+  "repository": {
+    "url": "https://github.com/sepehr071/gamefa-mcp",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/sepehr071/gamefa-mcp",
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "gamefa-mcp",
+      "version": "0.1.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "GAMEFA_MCP_PROXY",
+          "description": "Optional HTTP proxy URL for the Gamefa requests; system proxy settings are ignored. Also accepts a comma-separated list: one is used until it gets blocked or fails to connect, then the next.",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}
