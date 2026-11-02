@@ -55,6 +55,14 @@ async def test_search_articles_maps_sections(client, api):
     assert q["search"] == "gta" and q["categories"] == "3"
 
 
+async def test_article_without_known_sections_still_has_the_key(client, api):
+    posts = fixture("posts.json")
+    posts[0]["categories"] = [999999]
+    api["/wp-json/wp/v2/posts"] = posts
+    r = (await client.call_tool("gf_latest_articles", {})).structured_content
+    assert r["articles"][0]["sections"] == []
+
+
 async def test_article_has_review_box_and_truncates(client, api):
     api["/wp-json/wp/v2/posts/1624276"] = fixture("article.json")
     r = (await client.call_tool("gf_article", {"article": "1624276", "max_chars": 500})).structured_content

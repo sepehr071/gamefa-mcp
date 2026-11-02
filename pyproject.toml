@@ -1,6 +1,6 @@
 [project]
 name = "gamefa-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "Unofficial read-only MCP server for Gamefa (gamefa.com), the Persian game and film site: news, reviews with scores, game and film profiles, upcoming releases."
 readme = "README.md"
 license = "MIT"
