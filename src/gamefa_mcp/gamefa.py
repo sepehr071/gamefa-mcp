@@ -48,16 +48,16 @@ Category = Literal[
 ]  # fmt: skip
 CategoryArg = Annotated[
     Category | None,
-    Field(description="Limit to one section: news, reviews, analysis, trailers, training, scores (Metacritic roundups), best-lists, pc, playstation, xbox, nintendo, mobile, cinema, film-reviews, anime, tech... Omit for everything."),
+    Field(description="Limit to one section (scores = Metacritic roundups)."),
 ]  # fmt: skip
 Page = Annotated[int, Field(description="Page number, starting at 1.", ge=1, le=500)]
 Limit = Annotated[int, Field(description="Results per page.", ge=1, le=30)]
 Slug = Annotated[str, Field(pattern=r"^[A-Za-z0-9._-]{1,120}$", max_length=120)]
-Year = Annotated[int, Field(description="Calendar year (Gregorian), e.g. 2025.", ge=1950, le=2100)]
+Year = Annotated[int, Field(description="Gregorian year.", ge=1950, le=2100)]
 TagArg = Annotated[
     str | None,
     Field(
-        description="Topic tag slug or id (a game, franchise, studio or person) from gf_terms(kind='tag'), e.g. elden-ring.",
+        description="Topic tag slug or id from gf_terms(kind='tag'), e.g. elden-ring.",
         pattern=r"^[A-Za-z0-9%_.-]{1,200}$",
     ),
 ]  # fmt: skip
@@ -73,7 +73,7 @@ SORTS = {
 }
 Sort = Annotated[
     Literal["default", "top_rated", "top_users", "lowest_rated", "upcoming", "newest", "oldest"],
-    Field(description="Order of the list. upcoming = not yet released, soonest first; newest = by release date, latest first (includes unreleased). top_rated = Gamefa editors' score."),
+    Field(description="top_rated = editors' score (films: IMDb); upcoming = unreleased, soonest first; newest = latest release first, unreleased included."),
 ]  # fmt: skip
 
 _FA = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
@@ -251,9 +251,7 @@ async def _articles(
 async def gf_search_articles(
     query: Annotated[
         str,
-        Field(
-            description="Words to find, Persian or English (e.g. GTA 6, نقد، Elden Ring).", min_length=1, max_length=100
-        ),
+        Field(description="Persian or English words, e.g. GTA 6.", min_length=1, max_length=100),
     ],
     category: CategoryArg = None,
     page: Page = 1,
@@ -263,9 +261,7 @@ async def gf_search_articles(
 ) -> dict[str, Any]:
     """Search Gamefa's news, reviews and features by keyword, newest matches first.
 
-    Use for "what has Gamefa written about X". Returns id, title, date, url and a short summary per article.
-    `tag` narrows to one topic tag, `year` to one publishing year. Call gf_article with an id to read the full
-    text. For the score of a reviewed game use gf_game or gf_reviews.
+    Returns id, title, date, url and summary per article; read one with gf_article. For a game's score use gf_game.
     """
     return await _articles(query, category, page, limit, tag, year)
 
@@ -280,9 +276,7 @@ async def gf_latest_articles(
 ) -> dict[str, Any]:
     """List the newest Gamefa articles, optionally for one section such as news, reviews, trailers or pc.
 
-    Use for "what is new at Gamefa" or "latest PlayStation news". Returns id, title, date, url and a short summary.
-    For yearly top lists use category best-lists (or scores for Metacritic roundups) with `year`; for everything
-    about one game use `tag` (find it with gf_terms). Call gf_article to read one; gf_popular ranks by views.
+    Returns id, title, date, url and summary. Yearly top lists: category best-lists or scores with `year`.
     """
     return await _articles(None, category, page, limit, tag, year)
 
@@ -317,20 +311,18 @@ async def gf_article(
     article: Annotated[
         str,
         Field(
-            description="Article id (digits, from the search/latest tools) or the slug from its URL.",
+            description="Article id or URL slug.",
             min_length=1,
             max_length=150,
         ),
     ],
     max_chars: Annotated[
-        int, Field(description="Cut the text at this length; truncated=true tells you more exists.", ge=500, le=30000)
+        int, Field(description="Cut the text at this length (truncated=true if cut).", ge=500, le=30000)
     ] = 8000,
 ) -> dict[str, Any]:
     """Read one Gamefa article as plain text, with the editors' score box when it is a review.
 
-    Use after gf_search_articles, gf_latest_articles or gf_popular. Reviews carry `review` with score (out of 10),
-    label, verdict, pros and cons. `tags` are the topic tags (pass a slug to the `tag` filter of the search tools, or
-    use the article id with gf_comments). Images and videos are dropped; the text is Persian.
+    Reviews carry `review` (score out of 10, label, verdict, pros, cons). `tags` slugs fit the `tag` filter.
     """
     fields = {"_fields": "id,title,date,modified,link,content,categories,tags"}
     if article.isdigit():
@@ -360,19 +352,17 @@ async def gf_article(
 @tool("Game reviews with scores")
 async def gf_reviews(
     page: Page = 1,
-    limit: Annotated[int, Field(description="Reviews per page.", ge=1, le=15)] = 8,
+    limit: Annotated[int, Field(description="Per page.", ge=1, le=15)] = 8,
     query: Annotated[
-        str | None, Field(description="Optional words to narrow to one game, e.g. Elden Ring.", max_length=100)
+        str | None, Field(description="Game name, e.g. Elden Ring.", max_length=100)
     ] = None,
     year: Year | None = None,
-    min_score: Annotated[float | None, Field(description="Keep only reviews scoring at least this (0-10).", ge=0, le=10)] = None,
+    min_score: Annotated[float | None, Field(description="Minimum score (0-10).", ge=0, le=10)] = None,
 ) -> dict[str, Any]:  # fmt: skip
-    """List Gamefa's game reviews (نقد و بررسی) newest first, each with the editors' score out of 10, label, pros and cons.
+    """List Gamefa's game reviews newest first, each with the editors' score out of 10, label, pros and cons.
 
-    Use for "how did Gamefa rate X" or "latest reviews"; `year` limits to one publishing year and `min_score` keeps
-    only the high scorers (filtered after paging, so a page may return fewer than `limit`).
-    Older reviews may have no score box (score is then missing).
-    Call gf_article with the id for the full review text. For a game's profile score use gf_game.
+    `min_score` filters after paging, so a page may return fewer than `limit`; old reviews may lack a score.
+    Full text: gf_article.
     """
     params = {
         "per_page": limit,
@@ -417,15 +407,13 @@ POP_CATS = {"all": "0", "game": "1", "cinema": "75295", "tech": "75663", "video"
 
 @tool("Most read articles")
 async def gf_popular(
-    period: Annotated[
-        Literal["week", "month", "season", "year"], Field(description="Time window for the view counts.")
-    ] = "week",
+    period: Annotated[Literal["week", "month", "season", "year"], Field(description="View-count window.")] = "week",
     section: Annotated[Literal["all", "game", "cinema", "tech", "video"], Field(description="Site section.")] = "game",
     limit: Limit = 15,
 ) -> dict[str, Any]:
     """List the most viewed Gamefa articles of the past week, month, season or year, most viewed first.
 
-    Use for "what is trending at Gamefa". Returns id, title, url and view/comment/like counts; read one with gf_article.
+    Returns id, title, url and view/comment/like counts.
     """
     page = await fetch(f"{SITE}/popular/", {"cat": POP_CATS[section], "time": period}, html=True)
     out = []
@@ -630,11 +618,11 @@ def _tax(allowed: tuple[str, ...], **given: Any) -> tuple[str, str] | None:
     return next(iter(given.items())) if given else None
 
 
-TermArg = Annotated[str | None, Field(description="URL slug from gf_game output.", pattern=r"^[a-z0-9-]{1,80}$")]
+TermArg = Annotated[str | None, Field(description="Slug from gf_game.", pattern=r"^[a-z0-9-]{1,80}$")]
 Depth = Annotated[
     int,
     Field(
-        description="Only when a filter is combined with a sort or year: site pages of 36 to scan (one request each).",
+        description="Site pages of 36 to scan when a filter is combined with a sort or year.",
         ge=1,
         le=25,
     ),
@@ -646,36 +634,33 @@ async def gf_games(
     query: Annotated[
         str | None,
         Field(
-            description="Part of a game title, e.g. elden ring. Not combinable with the filters below.", max_length=100
+            description="Part of a title, e.g. elden ring. Not with a filter.", max_length=100
         ),
     ] = None,
     sort: Sort = "default",
     platform: Annotated[
         str | None,
         Field(
-            description="Platform slug: pc, playstation-5, playstation-4, xbox-series-x-s, nintendo-switch, ...",
+            description="Platform slug: pc, playstation-5, xbox-series-x-s, nintendo-switch...",
             pattern=r"^[a-z0-9-]{1,80}$",
         ),
     ] = None,
     genre: Annotated[
         str | None,
-        Field(description="Genre slug, e.g. action, rpg, platformer, shooter.", pattern=r"^[a-z0-9-]{1,80}$"),
+        Field(description="Genre slug, e.g. action, rpg.", pattern=r"^[a-z0-9-]{1,80}$"),
     ] = None,
     developer: TermArg = None,
     publisher: TermArg = None,
     page: Page = 1,
-    limit: Annotated[int, Field(description="Games per page (the site sends 36).", ge=1, le=36)] = 12,
-    year: Annotated[int | None, Field(description="Only games released in this Gregorian year.", ge=1970, le=2100)] = None,
+    limit: Annotated[int, Field(description="Per page.", ge=1, le=36)] = 12,
+    year: Annotated[int | None, Field(description="Release year (Gregorian).", ge=1970, le=2100)] = None,
     depth: Depth = SCAN_PAGES,
 ) -> dict[str, Any]:  # fmt: skip
     """Browse or search Gamefa's game profiles with the editors' score, user score, genres, platforms and release date.
 
-    Use for "best rated PS5 games", "games by Capcom", "best games of 2024" or finding one game's slug. Sort
-    top_rated lists the highest Gamefa scores. Give at most one of platform, genre, developer, publisher; query
-    works alone. Small filters (up to 288 games, e.g. most developers and publishers) are read completely and
-    sorted here (`complete`: true); for big ones a sort or `year` scans the first `depth` pages (default 8 = 288
-    games) of the sorted site list, so raise `depth` for deeper results. Find slugs with gf_terms. Release dates
-    come as Jalali plus ISO. Call gf_game with a slug for the full profile; gf_upcoming_games lists unreleased ones.
+    At most one of platform, genre, developer, publisher (slugs: gf_terms); query works alone. Filters up to 288
+    games are read whole (`complete`: true); bigger ones with a sort or `year` scan the first `depth` pages, so
+    raise `depth` for deeper results. Profile: gf_game.
     """
     tax = _tax(
         ("platform", "genre", "developer", "publisher"),
@@ -692,24 +677,22 @@ async def gf_upcoming_games(
     platform: Annotated[
         str | None,
         Field(
-            description="Optional platform slug: pc, playstation-5, xbox-series-x-s, nintendo-switch, ...",
+            description="Platform slug, e.g. pc, playstation-5.",
             pattern=r"^[a-z0-9-]{1,80}$",
         ),
     ] = None,
     page: Page = 1,
-    limit: Annotated[int, Field(description="Games per page (the site sends 36).", ge=1, le=36)] = 15,
+    limit: Annotated[int, Field(description="Per page.", ge=1, le=36)] = 15,
     month: Annotated[
         str | None,
-        Field(description="Only releases in this month, ISO form YYYY-MM, e.g. 2026-12.", pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+        Field(description="Month, YYYY-MM, e.g. 2026-12.", pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
     ] = None,
-    genre: Annotated[str | None, Field(description="Optional genre slug (not together with platform).", pattern=r"^[a-z0-9-]{1,80}$")] = None,
+    genre: Annotated[str | None, Field(description="Genre slug (not with platform).", pattern=r"^[a-z0-9-]{1,80}$")] = None,
     depth: Depth = SCAN_PAGES,
 ) -> dict[str, Any]:  # fmt: skip
     """List games that have not been released yet, soonest first (Gamefa's release calendar), with ISO release dates.
 
-    Use for "what comes out next", "upcoming PS5 games" or "games releasing in December 2026" (`month`). Dates are
-    what Gamefa has; a far-off date may be a placeholder. Months far ahead scan up to `depth` pages.
-    Call gf_game with a slug for details, or gf_search_articles for the news about it.
+    Far-off dates may be placeholders; months far ahead scan up to `depth` pages.
     """
     tax = _tax(("platform", "genre"), platform=platform, genre=genre)
     return await _profiles("games", "upcoming", None, tax, page, limit, month=month, depth=depth)
@@ -718,27 +701,25 @@ async def gf_upcoming_games(
 @tool("Film and series profiles")
 async def gf_films(
     query: Annotated[
-        str | None, Field(description="Part of a title, in English, e.g. breaking bad.", max_length=100)
+        str | None, Field(description="Part of an English title.", max_length=100)
     ] = None,
     sort: Sort = "default",
     page: Page = 1,
-    limit: Annotated[int, Field(description="Titles per page (the site sends 36).", ge=1, le=36)] = 12,
-    type: Annotated[Literal["movie", "series"] | None, Field(description="Only films or only TV series.")] = None,
-    genre: Annotated[str | None, Field(description="Film genre slug, e.g. drama, horror, sci-fi.", pattern=r"^[a-z0-9-]{1,80}$")] = None,
-    person: Annotated[str | None, Field(description="Actor/director slug, e.g. christopher-nolan.", pattern=r"^[a-z0-9-]{1,80}$")] = None,
-    company: Annotated[str | None, Field(description="Studio slug, e.g. warner-bros.", pattern=r"^[a-z0-9-]{1,80}$")] = None,
-    country: Annotated[str | None, Field(description="Country slug, e.g. usa.", pattern=r"^[a-z0-9-]{1,80}$")] = None,
-    language: Annotated[str | None, Field(description="Language slug, e.g. english.", pattern=r"^[a-z0-9-]{1,80}$")] = None,
-    year: Annotated[int | None, Field(description="Release year of the film or series.", ge=1900, le=2100)] = None,
+    limit: Annotated[int, Field(description="Per page.", ge=1, le=36)] = 12,
+    type: Annotated[Literal["movie", "series"] | None, Field(description="Films or TV series only.")] = None,
+    genre: Annotated[str | None, Field(description="Genre slug, e.g. drama, horror.", pattern=r"^[a-z0-9-]{1,80}$")] = None,
+    person: Annotated[str | None, Field(description="Actor/director slug.", pattern=r"^[a-z0-9-]{1,80}$")] = None,
+    company: Annotated[str | None, Field(description="Studio slug.", pattern=r"^[a-z0-9-]{1,80}$")] = None,
+    country: Annotated[str | None, Field(description="Country slug.", pattern=r"^[a-z0-9-]{1,80}$")] = None,
+    language: Annotated[str | None, Field(description="Language slug.", pattern=r"^[a-z0-9-]{1,80}$")] = None,
+    year: Annotated[int | None, Field(description="Release year.", ge=1900, le=2100)] = None,
     depth: Depth = SCAN_PAGES,
 ) -> dict[str, Any]:  # fmt: skip
     """Browse or search Gamefa's film and TV series profiles with IMDb score, user score, genres, director and release date.
 
-    Use for "top rated films on Gamefa", "best TV series" (type=series), "Nolan films" or finding a slug. top_rated
-    sorts by IMDb score; there is no Gamefa editors' score for films. Give at most one of type, genre, person,
-    company, country, language, year; query works alone. Small sets are read completely (`complete`: true),
-    big ones only through their first `depth` pages (`partial`: true). Find slugs with gf_terms. Call gf_film with a
-    slug for cast, runtime and more.
+    At most one of type, genre, person, company, country, language, year (slugs: gf_terms); query works alone.
+    Small sets are read whole (`complete`: true), big ones only through the first `depth` pages (`partial`: true).
+    Profile: gf_film.
     """
     tax = _tax(
         ("type", "genre", "person", "company", "country", "language", "year"),
@@ -804,25 +785,22 @@ async def _profile(kind: str, slug: str) -> dict[str, Any]:
 
 @tool("Game profile")
 async def gf_game(
-    slug: Annotated[Slug, Field(description="Game slug from gf_games or gf_upcoming_games, e.g. elden-ring.")],
+    slug: Annotated[Slug, Field(description="Game slug, e.g. elden-ring.")],
 ) -> dict[str, Any]:
     """Get one game's Gamefa profile: editors' score, user score and votes, Metacritic, release date, description.
 
-    Also platforms, genres, developers and publishers with slugs you can pass to gf_games as filters, the official
-    website, average playtime and the URL of Gamefa's review article (read it with gf_article).
+    Also platforms, genres, developers, publishers (with filter slugs), post_id and review_url (read with gf_article).
     """
     return await _profile("games", slug)
 
 
 @tool("Film profile")
 async def gf_film(
-    slug: Annotated[
-        Slug, Field(description="Film or series slug from gf_films, e.g. killers-of-the-flower-moon-2023.")
-    ],
+    slug: Annotated[Slug, Field(description="Film or series slug.")],
 ) -> dict[str, Any]:
     """Get one film or series profile: IMDb and user score, genres, cast, director, writers, countries, runtime, release date.
 
-    Slugs come from gf_films. Text is as Gamefa has it (mostly English names, Persian description).
+    Includes post_id for gf_comments.
     """
     return await _profile("film", slug)
 
@@ -851,15 +829,14 @@ async def gf_terms(
             "platform", "genre", "developer", "publisher", "film_type", "film_genre", "film_person", "film_company",
             "film_country", "film_language", "tag",
         ],
-        Field(description="What to look up: game platform/genre/developer/publisher, film_* equivalents, or tag (article topics)."),
+        Field(description="Term type; tag = article topics."),
     ],  # fmt: skip
-    query: Annotated[str | None, Field(description="Name or part of it, e.g. capcom, nolan, elden.", max_length=60)] = None,
-    limit: Annotated[int, Field(description="Results to return.", ge=1, le=50)] = 15,
+    query: Annotated[str | None, Field(description="Name or part, e.g. capcom.", max_length=60)] = None,
+    limit: Annotated[int, Field(description="Max results.", ge=1, le=50)] = 15,
 ) -> dict[str, Any]:  # fmt: skip
     """Find the slug of a platform, genre, developer, publisher, film person or studio, or an article topic tag.
 
-    Use before gf_games, gf_films or the `tag` filter of the article tools when you only know a name. Each hit has
-    slug, name and the number of games/films/articles under it; without `query` the biggest ones come first.
+    Each hit has slug, name and item count; without `query` the biggest come first.
     """
     params = {
         "per_page": limit,
@@ -877,17 +854,15 @@ async def gf_terms(
 @tool("Comments on an article or profile")
 async def gf_comments(
     post_id: Annotated[
-        int, Field(description="Article id (from the article tools) or a game/film `post_id` from gf_game / gf_film.", ge=1)
+        int, Field(description="Article id, or post_id from gf_game / gf_film.", ge=1)
     ],
-    sort: Annotated[Literal["newest", "oldest"], Field(description="Order by date.")] = "newest",
+    sort: Annotated[Literal["newest", "oldest"], Field(description="By date.")] = "newest",
     page: Page = 1,
-    limit: Annotated[int, Field(description="Comments per page.", ge=1, le=50)] = 15,
+    limit: Annotated[int, Field(description="Per page.", ge=1, le=50)] = 15,
 ) -> dict[str, Any]:  # fmt: skip
     """Read the public reader comments under a Gamefa article or a game/film profile, with likes and dislikes.
 
-    Use for "what do readers think of X". On a game or film profile the comments are where users post their own
-    verdicts and ratings. Replies carry `reply_to`, the parent comment id. Persian text, newest first by default.
-    `author` is the name stored with the comment; a user may have renamed since.
+    On a profile, comments hold user verdicts. Replies carry `reply_to` (parent comment id).
     """
     params = {
         "post": post_id,
@@ -925,16 +900,15 @@ async def gf_comments(
 
 @tool("Related articles or titles")
 async def gf_related(
-    slug: Annotated[Slug, Field(description="Game or film slug, e.g. elden-ring.")],
+    slug: Annotated[Slug, Field(description="Game or film slug.")],
     what: Annotated[
-        Literal["articles", "similar"], Field(description="articles = Gamefa posts about it; similar = other games/films.")
+        Literal["articles", "similar"], Field(description="articles = Gamefa posts; similar = other titles.")
     ] = "articles",
-    type: Annotated[Literal["game", "film"], Field(description="Whether the slug is a game or a film/series.")] = "game",
+    type: Annotated[Literal["game", "film"], Field(description="Slug kind.")] = "game",
 ) -> dict[str, Any]:  # fmt: skip
     """List the articles Gamefa links to a game or film profile, or the games/films it shows as similar.
 
-    Use for "news and reviews about X" after gf_games or gf_films gave you the slug, or for "games like X". Articles
-    carry id, title, date and counts (read one with gf_article); similar titles are profiles like gf_games returns.
+    Articles carry id, title, date, counts; similar titles are cards like gf_games rows.
     """
     kind = "games" if type == "game" else "film"
     section = "related-posts" if what == "articles" else f"related-{kind if kind == 'games' else 'films'}"
